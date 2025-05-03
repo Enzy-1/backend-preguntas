@@ -1,60 +1,112 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import OpenAI from 'openai';
 import mongoose from 'mongoose';
-import { router as chatRoutes } from './routes/chatRoutes.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import bodyParser from 'body-parser';
 
-// Obtener el directorio actual
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Cargar variables de entorno
 dotenv.config();
 
-// Verificar configuración de OpenAI
-if (!process.env.OPENAI_API_KEY) {
-  console.warn('\x1b[33m%s\x1b[0m', '⚠️  ADVERTENCIA: No se encontró la variable OPENAI_API_KEY');
-  console.log('\x1b[36m%s\x1b[0m', 'Para configurar la API key de OpenAI:');
-  console.log('1. Crea un archivo .env en la carpeta backend');
-  console.log('2. Añade la línea: OPENAI_API_KEY=tu-api-key-de-openai');
-  console.log('3. Reinicia el servidor\n');
-  
-  // Verificar si existe el archivo .env
-  const envPath = path.join(__dirname, '.env');
-  if (!fs.existsSync(envPath)) {
-    console.log('\x1b[31m%s\x1b[0m', 'No se encontró el archivo .env');
-  }
-}
-
 const app = express();
-const PORT = process.env.PORT || 5000;
+const port = 5000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json()); // Para poder parsear el cuerpo de las peticiones JSON
 
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://enzoaguino01@admin:Qu9xpNsmRmVPeE6O@cluster0.g4gsp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+// Conectar a MongoDB
+mongoose.connect('mongodb+srv://enzoaguino01:Wa4UBo0Tc1UV61dM@cluster0.g4gsp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('Conectado a MongoDB'))
+  .catch((err) => console.error('Error al conectar a MongoDB:', err));
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('✅ MongoDB conectado'))
-  .catch(err => console.error('❌ Error de conexión a MongoDB:', err));
+// Modelo de MongoDB para almacenar los resultados
+const resultSchema = new mongoose.Schema({
+  fecha: { type: Date, default: Date.now },
+  categoria: String,
+  preguntas: Array,
+  puntaje: Number,
+});
 
-// Rutas
-app.use('/api/chat', chatRoutes);
+const Result = mongoose.model('Result', resultSchema);
 
-// Ruta para probar el servidor
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'API de ChatGPT funcionando correctamente',
-    status: 'OpenAI configurado con clave fija en el controlador'
+// Configuración de OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Ruta para obtener preguntas
+app.get('/api/questions', async (req, res) => {
+  const { category } = req.query;
+
+  const messages = [
+    {
+      role: 'system',
+      content: 'Eres un generador de quizzes para estudiantes.',
+    },
+    {
+      role: 'user',
+      content: `Genera 5 preguntas tipo test sobre la categoría "${category}". Cada pregunta debe tener 4 opciones (a, b, c, d) y especificar la respuesta correcta. Devuelve el resultado en formato JSON con esta estructura:
+
+[ 
+  {
+    "pregunta": "¿Cuál es la capital de Francia?", 
+    "opciones": { 
+      "a": "Madrid", 
+      "b": "Berlín", 
+      "c": "París", 
+      "d": "Roma" 
+    }, 
+    "respuesta_correcta": "c" 
+  }
+]`,
+    },
+  ];
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages,
+      temperature: 0.7,
+    });
+
+    const content = response.choices[0].message.content;
+
+    const jsonStart = content.indexOf('[');
+    const jsonEnd = content.lastIndexOf(']') + 1;
+    const jsonString = content.slice(jsonStart, jsonEnd);
+
+    const questions = JSON.parse(jsonString);
+    res.json({ questions });
+  } catch (error) {
+    console.error('Error al generar preguntas:', error.message);
+    res.status(500).json({ error: 'No se pudieron generar preguntas' });
+  }
+});
+
+// Ruta para guardar los resultados
+app.post('/api/save-result', async (req, res) => {
+  const { categoria, preguntas, puntaje } = req.body;
+
+  // Crear un nuevo documento con el resultado
+  const newResult = new Result({
+    categoria,
+    preguntas,
+    puntaje,
   });
+
+  try {
+    await newResult.save();
+    res.status(200).json({ message: 'Resultado guardado exitosamente' });
+  } catch (error) {
+    console.error('Error al guardar el resultado:', error);
+    res.status(500).json({ error: 'Error al guardar el resultado' });
+  }
 });
 
 // Iniciar el servidor
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
+app.listen(port, () => {
+  console.log(`Servidor backend en http://localhost:${port}`);
 });
