@@ -72,9 +72,14 @@ app.get('/api/questions', async (req, res) => {
       temperature: 0.7,
     });
 
-    console.log('Respuesta de OpenAI:', response);  // Agrega este log para inspeccionar la respuesta completa
+    console.log('Respuesta de OpenAI:', response);  // Log completo de la respuesta
+
+    if (!response.choices || response.choices.length === 0) {
+      throw new Error('No se recibieron opciones válidas de OpenAI.');
+    }
 
     const content = response.choices[0].message.content;
+    console.log('Contenido de OpenAI:', content);  // Log del contenido que recibimos
 
     const jsonStart = content.indexOf('[');
     const jsonEnd = content.lastIndexOf(']') + 1;
@@ -84,7 +89,7 @@ app.get('/api/questions', async (req, res) => {
     res.json({ questions });
   } catch (error) {
     console.error('Error al generar preguntas:', error.message);
-    res.status(500).json({ error: 'No se pudieron generar preguntas' });
+    res.status(500).json({ error: 'No se pudieron generar preguntas', details: error.message });
   }
 });
 
