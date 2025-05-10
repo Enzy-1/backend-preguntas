@@ -72,6 +72,8 @@ app.get('/api/questions', async (req, res) => {
       temperature: 0.7,
     });
 
+    console.log('Respuesta de OpenAI:', response);  // Agrega este log para inspeccionar la respuesta completa
+
     const content = response.choices[0].message.content;
 
     const jsonStart = content.indexOf('[');
@@ -85,6 +87,7 @@ app.get('/api/questions', async (req, res) => {
     res.status(500).json({ error: 'No se pudieron generar preguntas' });
   }
 });
+
 
 // Ruta para guardar los resultados
 app.post('/api/save-result', async (req, res) => {
